@@ -131,7 +131,7 @@ int main ()
 	float fltlines[Nx];
 
 	// Loop over ftp server files starts here
-	for (k=500;k<=500;k++)
+	for (k=1;k<=1392;k++)
 	{
 		// print filename
 		month = (k-1)%12 + 1;
@@ -139,19 +139,23 @@ int main ()
 		sprintf(title,"CHELSAcruts_prec_%d_%d_V.1.0.tif",month,year); 
 
 		// Run Bash commands from within this script
-		// Note that strcpy and strcat here have not been controlled for null terminator
-		// wget
+		// Note that strcpy and strcat here have not been controlled for null terminator;
+		//   this could result in script slow-down or possibly worse things, but it seems to be working;
+		//   if it wasn't working, then the files wouldn't be loaded and wget/gdal would spit back error messages;
+		//   would also expect wonky results in the output;
+		//   neither of these is present.
+		// wget file from ftp server
 		strcpy(cmd1,"wget -q https://www.wsl.ch/lud/chelsa/data/timeseries20c/prec/");
 		strcat(cmd1,title);
 		system(cmd1);
-		printf("file loaded\n");
+		//printf("file loaded\n");
 		
-		// gdal_translate
-		strcpy(cmd2,"gdal_translate -ot Int16 -of EHdr ");
+		// gdal_translate GeoTiff ==> flat binary
+		strcpy(cmd2,"gdal_translate -q -ot Int16 -of EHdr ");
 		strcat(cmd2,title);
 		strcat(cmd2," data.bil");
 		system(cmd2);
-		printf("file translated\n");
+		//printf("file translated\n");
 
 		// Load .bil data and update statistics
 		fr0 = fopen("data.bil","rb");
@@ -172,14 +176,18 @@ int main ()
 		}
 		fclose(fr0);
 		
-		// rm
+		// rm; it's probably not necessary to include this step, but deleting files tends to be pretty quick.
 		strcpy(cmd3,"rm ");
 		strcat(cmd3,title);
 		strcat(cmd3," data*");
 		system(cmd3);
-		printf("files deleted\n");
+		//printf("files deleted\n");
 		
-		fflush(stdout);
+		if (k%40 == 20)
+		{
+			printf("Iteration: %d   Month: %d   Year: %d \n",k,month,year);
+			fflush(stdout);
+		}
 		
 	}
 	printf("File loading and statistics done\n");
@@ -195,7 +203,8 @@ int main ()
 		(void)fwrite(fltlines,sizeof(fltlines),1,fw0); // mean
 		
 		for (i=1;i<=Nx;i++)
-			fltlines[i-1]=sqrt(precM2[i][j]/(Nprec[i][j]-1))/precM1[i][j]; // coefficient of variation
+			if (Nprec[i][j] > 2)
+				fltlines[i-1]=sqrt(precM2[i][j]/(Nprec[i][j]-1))/precM1[i][j]; // coefficient of variation
 		(void)fwrite(fltlines,sizeof(fltlines),1,fw1);
 		
 		for (i=1;i<=Nx;i++)
