@@ -1,7 +1,12 @@
 /*
 	This script is used in preparation of pulling CHELSA 20th century time series one at a time and calculating statistics on them using the Welford online single-pass algorithm.
+	
+	This version uses GDAL API and iterates on the downloaded CHELSA data sets. These files must be pre-downloaded using wget or something similar. The intention is to build a Docker container that compiles this script with the relevant library dependencies to allow for execution on the UA HPC system. Notably, the GDAL developer library libgdal-dev is required, linked upon compilation with the -lgdal flag.
+	
+	NOTE: wget stores files in /extra/alexprescott/prec20c; first line of bash script must be to copy all of the files from that directory to /tmp/, the temporary directory on the HPC execute node disk (maximum storage of ~800 GB). The /tmp/ directory is incrementally filled as users run their jobs and store files on it; the HPC manager automatically suspends jobs sent to a given node and clears the /tmp directory once it is filled past some threshold level. If the job fails and returns an error relating to not enough disk space, it is probably because /tmp was almost full and the requirements of my job exceeded the remaining available space. Note that I can not edit /tmp locations that other users have written to, even if their jobs have run to completion.
+	
 	Alexander Prescott
-	December 23 2018
+	March 12 2019
 */
 
 int Nx,Ny;
@@ -13,6 +18,8 @@ float **precM1, **precM2;
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include<gdal.h>
+#include<cpl_conv.h> /*for CPLMalloc() */
 
 #define NR_END 1
 #define FREE_ARG char*
@@ -117,10 +124,10 @@ void setupmatrices()
 
 int main ()
 {
-	FILE *fr0,*fw0,*fw1,*fw2;
+	FILE *fw0,*fw1,*fw2;
 	int i,j,k,month,year;
 	float del1,del2;
-	char title[50],cmd1[100],cmd2[100],cmd3[50];
+	char title[50];
 	
 	Nx = 43200;
 	Ny = 20880;
@@ -130,38 +137,35 @@ int main ()
 	short intlines[Nx];
 	float fltlines[Nx];
 
-	// Loop over ftp server files starts here
+	/* Initialize GDAL dataset */
+	GDALDatasetH hDataset;
+	GDALAllRegister();
+	GDALRasterBandH hBand;
+
+	/* Loop over all CHELSA 20th century reanalysis precipitation files starts here */
 	for (k=1;k<=1392;k++)
 	{
-		// print filename
+		/* print filename into title */
 		month = (k-1)%12 + 1;
 		year = (int) floor((k-1)/12) + 1901;
-		sprintf(title,"CHELSAcruts_prec_%d_%d_V.1.0.tif",month,year); 
-
-		// Run Bash commands from within this script
-		// Note that strcpy and strcat here have not been controlled for null terminator;
-		//   this could result in script slow-down or possibly worse things, but it seems to be working;
-		//   if it wasn't working, then the files wouldn't be loaded and wget/gdal would spit back error messages;
-		//   would also expect wonky results in the output;
-		//   neither of these is present.
-		// wget file from ftp server
-		strcpy(cmd1,"wget -q https://www.wsl.ch/lud/chelsa/data/timeseries20c/prec/");
-		strcat(cmd1,title);
-		system(cmd1);
-		//printf("file loaded\n");
+		sprintf(title,"/tmp/CHELSAcruts_prec_%d_%d_V.1.0.tif\0",month,year); // \0 is null string terminator
 		
-		// gdal_translate GeoTiff ==> flat binary
-		strcpy(cmd2,"gdal_translate -q -ot Int16 -of EHdr ");
-		strcat(cmd2,title);
-		strcat(cmd2," data.bil");
-		system(cmd2);
-		//printf("file translated\n");
-
-		// Load .bil data and update statistics
-		fr0 = fopen("data.bil","rb");
+		/* Load dataset */
+		hDataset = GDALOpen(title,GA_ReadOnly);
+		if (hDataset == NULL)
+		{
+			printf("DATASET LOAD FAILURE ON ITERATION %d\n",k);
+			return 1;
+		}
+		
+		/* Choose relevant data band */
+		hBand = GDALGetRasterBand( hDataset, 1 );
+		
+		// Load .tif data and update statistics
 		for (j=1;j<=Ny;j++)
 		{
-			(void) fread(intlines,sizeof(intlines),1,fr0);
+			/* Read .tif data from hBand, with 0 x-offset and j-1 y-offset, read Nx entries into intlines, of type Int16 i.e. short integers; I believe this is parallelizable. */
+			GDALRasterIO( hBand, GF_Read, 0, j-1, Nx, 1,intlines, Nx, 1, GDT_Int16,0, 0 );
 			for (i=1;i<=Nx;i++)
 			{
 				if (intlines[i-1] >= 0) // if there is precip data, then do:
@@ -174,14 +178,6 @@ int main ()
 				}
 			}
 		}
-		fclose(fr0);
-		
-		// rm; it's probably not necessary to include this step, but deleting files tends to be pretty quick.
-		strcpy(cmd3,"rm ");
-		strcat(cmd3,title);
-		strcat(cmd3," data*");
-		system(cmd3);
-		//printf("files deleted\n");
 		
 		if (k%40 == 20)
 		{
@@ -189,7 +185,8 @@ int main ()
 			fflush(stdout);
 		}
 		
-	}
+	} /* end file load loop */
+	
 	printf("File loading and statistics done\n");
 	
 	// write statistics arrays to file
