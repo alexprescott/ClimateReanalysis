@@ -1,0 +1,9 @@
+# ignore hpc out files
+*.o*
+*.e*
+
+# ignore singularity container
+*.sif
+
+# ignore version 1.0 subdirectory
+v1.0/
