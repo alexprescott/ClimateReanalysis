@@ -1,0 +1,5 @@
+# want to exlcude everything except the calcStats.c file
+# dockerfile and .dockignore will still be sent to the daemon but won't be copied into image
+*
+!calcStats.c
+
