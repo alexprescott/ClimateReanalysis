@@ -1,3 +1,18 @@
+<<<<<<< HEAD
 # Files for git to ignore
 extra/*
 *.exe
+=======
+# ignore hpc out files
+*.o*
+*.e*
+
+# ignore singularity container
+*.sif
+
+# ignore version 1.0 subdirectory
+v1.0/
+extra/*
+*.exe
+
+>>>>>>> fe26484d8de69f35cf6c6ab04b37cf51c8646855
