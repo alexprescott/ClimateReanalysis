@@ -17,12 +17,13 @@ RUN mkdir -p /tmp/fakeroot/lib  && \
 
 
 
-FROM ubuntu
+# apparently some UA HPC nodes have kernels too old for newest Ubuntu... get "FATAL: kernel too old" error
+FROM ubuntu:16.04
 WORKDIR /usr/src/gdaltest
 
 # Copy executable, library dependencies from build
 COPY --from=build /tmp/fakeroot /
 COPY --from=build /usr/src/gdaltest /usr/src/gdaltest
 
-CMD ./a.exe
+CMD /usr/src/gdaltest/a.exe
  
